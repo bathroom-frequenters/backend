@@ -1,12 +1,21 @@
+from dataclasses import asdict
 from datetime import timedelta, datetime
 from django.utils import timezone
 from influxdb import InfluxDBClient
 from influxdb.resultset import ResultSet
-from typing import List
+from typing import List, Optional
 
 from .entities import AvailabilityRecord
 
 from api.utils import get_influxdb_client
+
+
+def _get_points(client: InfluxDBClient, query: str) -> List[AvailabilityRecord]:
+    result: ResultSet = client.query(query)
+    records: List[AvailabilityRecord] = list(
+        map(lambda point: AvailabilityRecord(**point), result.get_points())
+    )
+    return records
 
 
 def create_availability(available: bool) -> bool:
@@ -17,25 +26,27 @@ def create_availability(available: bool) -> bool:
     return client.write_points([point])
 
 
-def get_latest_availability() -> AvailabilityRecord:
-    client: InfluxDBClient = get_influxdb_client()
+def get_latest_availability(
+    client: Optional[InfluxDBClient] = None
+) -> AvailabilityRecord:
+    client = client or get_influxdb_client()
 
-    result: ResultSet = client.query(
-        "SELECT time, LAST(value) as available FROM available LIMIT 1"
+    point, *_ = _get_points(
+        client, "SELECT time, LAST(value) as available FROM available LIMIT 1"
     )
 
-    point, *_ = list(result.get_points())
-
-    return AvailabilityRecord(**point)
+    return point
 
 
-def get_recent_availability() -> List[AvailabilityRecord]:
-    client: InfluxDBClient = get_influxdb_client()
-    result: ResultSet = client.query(
-        "SELECT time, last(value) as available FROM available WHERE time > now() - 1h GROUP BY time(1m) FILL(previous)"
+def get_recent_availability(
+    client: Optional[InfluxDBClient] = None
+) -> List[AvailabilityRecord]:
+    client = client or get_influxdb_client()
+
+    records = _get_points(
+        client,
+        "SELECT time, last(value) as available FROM available WHERE time > now() - 1h GROUP BY time(1m) FILL(previous)",
     )
-
-    records = list(map(lambda point: AvailabilityRecord(**point), result.get_points()))
 
     # reverse the records because they are returned in ascending order and we want descending
     #  UNFORTUNATELY InfluxDB screws up the results when you try `ORDER BY time DESC`
@@ -43,9 +54,25 @@ def get_recent_availability() -> List[AvailabilityRecord]:
 
     if len(records) > 0:
         # Check for null-record pollution when data falls out of query scope
-        if records[0].available is None:
-            pass
+        if any(record.available is None for record in records):
+            previous, *_ = _get_points(
+                client,
+                "SELECT time, LAST(value) as available FROM available WHERE time < now() - 1h LIMIT 1",
+            )
 
+            replacement: List[AvailabilityRecord] = []
+
+            for record in records:
+                if record.available is None:
+                    replacement.append(
+                        AvailabilityRecord(
+                            time=record.time, available=previous.available
+                        )
+                    )
+                else:
+                    replacement.append(record)
+
+            records = replacement
     else:
         # There are no records for the previous 60 minutes, have to find the last one, and build an
         #  array for the past 60 minutes from its value
@@ -54,6 +81,7 @@ def get_recent_availability() -> List[AvailabilityRecord]:
             timestamp = timestamp.replace(minute=0)
             timestamp -= timedelta(minutes=minutes_ago)
 
+            # TODO THIS TIMESTAMP STRING IS BAD
             return timestamp.isoformat("T")
 
         records = []
@@ -72,3 +100,12 @@ def get_recent_availability() -> List[AvailabilityRecord]:
                 )
 
     return records
+
+
+def get_recent_and_latest_availability_as_serializable() -> dict:
+    client: InfluxDBClient = get_influxdb_client()
+
+    latest: dict = asdict(get_latest_availability(client))
+    recent: List[dict] = list(map(asdict, get_recent_availability(client)))
+
+    return {"latest": latest, "recent": recent}

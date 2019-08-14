@@ -1,12 +1,9 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
-from dataclasses import asdict
 from django.conf import settings
-from typing import List
 
 import json
 
-from .entities import AvailabilityRecord
-from .repositories import get_recent_availability
+from .repositories import get_recent_and_latest_availability_as_serializable
 
 
 class MonitorConsumer(AsyncWebsocketConsumer):
@@ -15,8 +12,7 @@ class MonitorConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        records: List[AvailabilityRecord] = get_recent_availability()
-        data: List[dict] = list(map(asdict, records))
+        data: dict = get_recent_and_latest_availability_as_serializable()
 
         await self.send(text_data=json.dumps(data))
 
@@ -27,8 +23,7 @@ class MonitorConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data=None, bytes_data=None):
         if text_data == "SEND_DATA_PLZ_KTHXBAI":
-            records: List[AvailabilityRecord] = get_recent_availability()
-            data: List[dict] = list(map(asdict, records))
+            data = get_recent_and_latest_availability_as_serializable()
 
             await self.send(text_data=json.dumps(data))
 
