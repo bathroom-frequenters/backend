@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "channels",
+    "bmonitor.apps.BmonitorConfig",
 ]
 
 MIDDLEWARE = [
@@ -133,3 +134,5 @@ CHANNEL_LAYERS = {
         "CONFIG": {"hosts": [("127.0.0.1", 6379)]},
     }
 }
+
+ROOM_GROUP_NAME = "Alexandria"
