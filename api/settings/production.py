@@ -1,5 +1,7 @@
 from .common import *  # noqa
 
+ALLOWED_HOSTS = ["bathroom-api.tmk.name"]
+
 # Channels
 
 ASGI_APPLICATION = "api.routing.application"
@@ -23,3 +25,6 @@ INFLUXDB_TIMEOUT = 10
 
 # CHANGE ME!
 API_PASSWORD = "42"
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = "change me!"
