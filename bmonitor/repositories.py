@@ -31,11 +31,15 @@ def get_latest_availability(
 ) -> AvailabilityRecord:
     client = client or get_influxdb_client()
 
-    point, *_ = _get_points(
-        client, "SELECT time, LAST(value) as available FROM available LIMIT 1"
-    )
-
-    return point
+    try:
+        point, *_ = _get_points(
+            client, "SELECT time, LAST(value) as available FROM available LIMIT 1"
+        )
+    except:
+        # TODO refactor to support returning no data
+        return AvailabilityRecord(False, "")
+    else:
+        return point
 
 
 def get_recent_availability(
@@ -55,10 +59,13 @@ def get_recent_availability(
     if len(records) > 0:
         # Check for null-record pollution when data falls out of query scope
         if any(record.available is None for record in records):
-            previous, *_ = _get_points(
-                client,
-                "SELECT time, LAST(value) as available FROM available WHERE time < now() - 1h LIMIT 1",
-            )
+            try:
+                previous, *_ = _get_points(
+                    client,
+                    "SELECT time, LAST(value) as available FROM available WHERE time < now() - 1h LIMIT 1",
+                )
+            except:
+                previous = AvailabilityRecord(False, "")
 
             replacement: List[AvailabilityRecord] = []
 
@@ -87,7 +94,7 @@ def get_recent_availability(
         records = []
 
         try:
-            last_seen = get_latest_availability()
+            last_seen = get_latest_availability(client)
         except:
             # In case get_latest_availability() returns no results, return an empty array
             pass
