@@ -1,11 +1,19 @@
+import csv
+
 from dataclasses import asdict
+from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from typing import List
 
 from .entities import AvailabilityRecord
-from .repositories import get_latest_availability, get_recent_availability
+from .repositories import (
+    get_latest_availability,
+    get_recent_availability,
+    get_all_data_points,
+    get_heat_map,
+)
 from .serializers import SensorUploadSerializer, SensorStatusSerializer
 
 
@@ -22,7 +30,7 @@ class SensorStatusViewSet(viewsets.GenericViewSet):
 
         data: dict = asdict(current)
 
-        serializer = SensorStatusSerializer(data=data)
+        serializer = SensorStatusSerializer(instance=data)
 
         serializer.is_valid(raise_exception=True)
 
@@ -39,3 +47,23 @@ class SensorStatusViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
 
         return Response({"results": serializer.data}, status=status.HTTP_200_OK)
+
+    @action(methods=["GET"], detail=False)
+    def dump(self, request):
+        points: List[AvailabilityRecord] = get_all_data_points()
+
+        response = HttpResponse(content_type="text/csv", status=status.HTTP_200_OK)
+        response["Content-Disposition"] = "attachment; filename='dump.csv'"
+
+        writer = csv.DictWriter(response, fieldnames=("available", "time"))
+
+        writer.writeheader()
+        writer.writerows(map(asdict, points))
+
+        return response
+
+    @action(methods=["GET"], detail=False)
+    def heat_map(self, request):
+        heat_map: dict = get_heat_map()
+
+        return Response(heat_map, status=status.HTTP_200_OK)

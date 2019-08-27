@@ -1,8 +1,10 @@
+from collections import defaultdict, Counter
 from dataclasses import asdict
 from datetime import timedelta, datetime
 from django.utils import timezone
 from influxdb import InfluxDBClient
 from influxdb.resultset import ResultSet
+from iso8601 import parse_date
 from typing import List, Optional
 
 from .entities import AvailabilityRecord
@@ -116,3 +118,29 @@ def get_recent_and_latest_availability_as_serializable() -> dict:
     recent: List[dict] = list(map(asdict, get_recent_availability(client)))
 
     return {"latest": latest, "recent": recent}
+
+
+def get_all_data_points() -> List[AvailabilityRecord]:
+    client: InfluxDBClient = get_influxdb_client()
+
+    data_points: List[AvailabilityRecord] = _get_points(
+        client,
+        "SELECT time, last(value) as available FROM available GROUP BY time(1m) FILL(previous)",
+    )
+
+    return data_points
+
+
+def get_heat_map() -> dict:
+    points: List[AvailabilityRecord] = get_all_data_points()
+
+    # Heat map is initially indexed by day of the week, and then indexed by 'hh:mm'
+    #   Heat map adds 1 if available, subtracts 1 if unavailable
+    heat_map: dict = defaultdict(Counter)
+    values = {True: 1, False: -1}
+
+    for point in points:
+        dt: datetime = parse_date(point.time)
+        heat_map[dt.strftime("%A")][dt.strftime("%H:%M")] += values[point.available]
+
+    return heat_map
